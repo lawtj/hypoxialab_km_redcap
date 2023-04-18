@@ -9,7 +9,7 @@ st.write('Instructions: Drop the raw KM export file into the box below. Fill in 
 
 upi = st.number_input('Unique Patient ID')
 
-if upi != 0.0:
+if upi >= 1:
     uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
