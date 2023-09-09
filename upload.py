@@ -16,6 +16,7 @@ if upi >= 1:
         df = pd.read_csv(uploaded_file)
         #df = df.drop(['Unnamed: 45'], axis=1)
         df['upi'] = int(upi)
+        df['session'] = int(session)
         df.rename_axis('record_id', inplace=True)
         df = df.reset_index()
         df = df[['record_id','upi','session','Group', 'Data Name', 'Comment', 'Date', 'Time', 'Melanin Index',
