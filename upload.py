@@ -8,6 +8,7 @@ st.header('Import KM file to RedCap')
 st.write('Instructions: Drop the raw KM export file into the box below. Fill in the study ID.')
 
 upi = st.number_input('Unique Patient ID')
+session = st.number_input('Session #')
 
 if upi >= 1:
     uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
@@ -17,7 +18,7 @@ if upi >= 1:
         df['upi'] = int(upi)
         df.rename_axis('record_id', inplace=True)
         df = df.reset_index()
-        df = df[['record_id','upi','Group', 'Data Name', 'Comment', 'Date', 'Time', 'Melanin Index',
+        df = df[['record_id','upi','session','Group', 'Data Name', 'Comment', 'Date', 'Time', 'Melanin Index',
        'Hb Index', 'Hb SO2 Index(%)', 'Hue', 'Value', 'Chroma', 'L*', 'a*',
        'b*', '400', '410', '420', '430', '440', '450', '460', '470', '480',
        '490', '500', '510', '520', '530', '540', '550', '560', '570', '580',
