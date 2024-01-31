@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import requests
+import openox.hypoxialab_functions as ox
+import plotly.express as px
 
 # start layout
 
@@ -35,6 +37,18 @@ if upi >= 1:
         'km690', 'km700']
             st.write('file accepted')
             st.write(df.head())
+            
+            # this code is added for ita check - the ita is not going to be included in the redcap upload
+            df_ita = df.copy()
+            df_ita['ita'] = df_ita.apply(ox.ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
+            one, two = st.columns(2)
+            with one:
+                st.write("Checking ITA by Group...")
+                st.write(df_ita[['group','ita']]) 
+            with two:
+                ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
+                st.plotly_chart(ita_by_group_scatter_plot)
+            
             csv = df.to_csv(index=False).encode('utf-8')
             if st.button('Upload to RedCap'):
                 data = {
