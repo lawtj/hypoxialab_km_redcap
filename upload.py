@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import requests
-import openox.hypoxialab_functions as ox
 import plotly.express as px
+import numpy as np
+import math
 
 # start layout
 
@@ -39,8 +40,12 @@ if upi >= 1:
             st.write(df.head())
             
             # this code is added for ita check - the ita is not going to be included in the redcap upload
+            
+            def ita(row, lab_l, lab_b):
+                return (np.arctan((row[lab_l]-50)/row[lab_b])) * (180/math.pi)
+            
             df_ita = df.copy()
-            df_ita['ita'] = df_ita.apply(ox.ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
+            df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
             one, two = st.columns(2)
             with one:
                 st.write("Checking ITA by Group...")
