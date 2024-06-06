@@ -12,15 +12,17 @@ st.write('Instructions: Drop the raw KM export file into the box below. Fill in 
 
 upi = st.number_input('Unique Patient ID')
 session = st.number_input('Session #')
+operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
 
 if upi >= 1:
-    if session >= 1:
+    if (session >= 1) and (operator != None):
         uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
             #df = df.drop(['Unnamed: 45'], axis=1)
             df['upi'] = int(upi)
             df['session'] = int(session)
+            df['operator'] = operator
             df.rename_axis('record_id', inplace=True)
             df = df.reset_index()
             df = df[['record_id','upi','session','Group', 'Data Name', 'Comment', 'Date', 'Time', 'Melanin Index',
@@ -28,14 +30,14 @@ if upi >= 1:
         'b*', '400', '410', '420', '430', '440', '450', '460', '470', '480',
         '490', '500', '510', '520', '530', '540', '550', '560', '570', '580',
         '590', '600', '610', '620', '630', '640', '650', '660', '670', '680',
-        '690', '700']]
+        '690', '700','operator']]
             df.columns = ['record_id', 'upi', 'session','group', 'data_name', 'comment', 'date', 'time',
         'melanin_index', 'hb_index', 'hb_so2_index', 'hue', 'value', 'chroma',
         'lab_l', 'lab_a', 'lab_b', 'km400', 'km410', 'km420', 'km430', 'km440',
         'km450', 'km460', 'km470', 'km480', 'km490', 'km500', 'km510', 'km520',
         'km530', 'km540', 'km550', 'km560', 'km570', 'km580', 'km590', 'km600',
         'km610', 'km620', 'km630', 'km640', 'km650', 'km660', 'km670', 'km680',
-        'km690', 'km700']
+        'km690', 'km700','operator']
             st.write('file accepted')
             st.write(df.head())
             
@@ -46,8 +48,7 @@ if upi >= 1:
             df_ita = df.copy()
             df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
             
-            st.write('ITA range by Group')
-            st.write(df_ita.groupby('group').apply(lambda x: x['ita'].max() - x['ita'].min()).reset_index(name='ita_range'))
+            
             
             one, two = st.columns(2)
             with one:
@@ -55,10 +56,12 @@ if upi >= 1:
                 st.write(df_ita[['group','ita']]) 
                 
             with two:
-                ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
-                st.plotly_chart(ita_by_group_scatter_plot)
+                st.write('ITA range by Group')
+                st.write(df_ita.groupby('group').apply(lambda x: x['ita'].max() - x['ita'].min()).reset_index(name='ita_range'))
+                
             # ---------------------------------------------
-            
+            ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
+            st.plotly_chart(ita_by_group_scatter_plot)
             csv = df.to_csv(index=False).encode('utf-8')
             if st.button('Upload to RedCap'):
                 data = {
