@@ -3,4 +3,3 @@ streamlit
 pandas
 requests
 numpy
-math
