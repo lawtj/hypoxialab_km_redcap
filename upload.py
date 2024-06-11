@@ -15,7 +15,7 @@ session = st.number_input('Session #')
 operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
 
 if upi >= 1:
-    if (session >= 1) and (operator != None):
+    if (session >= 1):
         uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
