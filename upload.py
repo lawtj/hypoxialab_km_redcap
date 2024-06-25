@@ -13,22 +13,27 @@ st.write('Instructions: Drop the raw KM export file into the box below. Fill in 
 location = st.selectbox('Select Location', ['UCSF','Uganda'], placeholder='Select Location', index=0)
 
 upi = st.number_input('Unique Patient ID')
-session = st.number_input('Session #')
+
 if location == 'UCSF':
+    session = st.number_input('Session #')
     operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
 else:
+    session = None  # Or any default value or handling for Uganda
     operator = st.selectbox(':scientist: Select KM operator', ['Ronald'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token_uganda']
 
 if upi >= 1:
-    if (session >= 1):
+    if location == 'UCSF' and session is not None and session >= 1 or location == 'Uganda':
         uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
             #df = df.drop(['Unnamed: 45'], axis=1)
             df['upi'] = int(upi)
-            df['session'] = int(session)
+            if location == 'UCSF':
+                df['session'] = int(session)
+            else:
+                df['session'] = None  # Or handle as needed for Uganda
             df['operator'] = operator
             df.rename_axis('record_id', inplace=True)
             df = df.reset_index()
