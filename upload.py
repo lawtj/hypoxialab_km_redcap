@@ -10,9 +10,16 @@ import math
 st.header('Import KM file to RedCap')
 st.write('Instructions: Drop the raw KM export file into the box below. Fill in the study ID.')
 
+location = st.selectbox('Select Location', ['UCSF','Uganda'], placeholder='Select Location', index=0)
+
 upi = st.number_input('Unique Patient ID')
 session = st.number_input('Session #')
-operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
+if location == 'UCSF':
+    operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
+    api_key = st.secrets['token']
+else:
+    operator = st.selectbox(':scientist: Select KM operator', ['Ronald'], placeholder='Select Operator', index=None)
+    api_key = st.secrets['token_uganda']
 
 if upi >= 1:
     if (session >= 1):
@@ -65,7 +72,7 @@ if upi >= 1:
             csv = df.to_csv(index=False).encode('utf-8')
             if st.button('Upload to RedCap'):
                 data = {
-                'token': st.secrets['token'],
+                'token': api_key,
                 'content': 'record',
                 'action': 'import',
                 'format': 'csv',
