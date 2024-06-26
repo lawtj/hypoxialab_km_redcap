@@ -18,10 +18,12 @@ if location == 'UCSF':
     session = st.number_input('Session #')
     operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
+    api_url = 'https://redcap.ucsf.edu/api/'
 else:
     session = None  # Or any default value or handling for Uganda
     operator = st.selectbox(':scientist: Select KM operator', ['Ronald'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token_uganda']
+    api_url = 'https://redcap.ace.ac.ug/api/'
 
 if upi >= 1:
     if location == 'UCSF' and session is not None and session >= 1 or location == 'Uganda':
@@ -89,6 +91,7 @@ if upi >= 1:
                 'returnContent': 'count',
                 'returnFormat': 'json'
                 }
-                r = requests.post('https://redcap.ucsf.edu/api/',data=data)
+                with st.spinner('Uploading to RedCap...'):
+                    r = requests.post(api_url,data=data)
                 st.write('HTTP Status: ' + str(r.status_code))
                 st.write(r.text)
