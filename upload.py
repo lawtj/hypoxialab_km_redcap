@@ -4,6 +4,14 @@ import requests
 import plotly.express as px
 import numpy as np
 import math
+from redcap import Project
+
+def st_load_project(key):
+    api_key = st.secrets[key]
+    api_url = 'https://redcap.ucsf.edu/api/'
+    project = Project(api_url, api_key)
+    df = project.export_records(format_type='df')
+    return df
 
 # start layout
 
@@ -14,8 +22,16 @@ location = st.selectbox('Select Location', ['UCSF','Uganda'], placeholder='Selec
 
 upi = st.number_input('Unique Patient ID')
 
+if upi > 0 and upi < 500 and location == 'UCSF': # little reminder to ensure that the session number and patient id is not flipped
+    st.markdown('🚨 Be careful! The entered patient id is <500. Remember to double check :)')
+
 if location == 'UCSF':
     session = st.number_input('Session #')
+    konica = st_load_project('token')
+    if session in konica['session'].unique(): # check to prevent duplicate uploads
+        st.markdown('🚨 The KM data for this session has already been uploaded. See below to compare if it is the same set of data stored in redcap database.')
+        session_data = konica[konica['session'] == session]
+        st.write(session_data)
     operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
     api_url = 'https://redcap.ucsf.edu/api/'
