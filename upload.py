@@ -5,6 +5,7 @@ import plotly.express as px
 import numpy as np
 import math
 from redcap import Project
+from pandas.api.types import is_numeric_dtype
 
 def st_load_project(key):
     api_key = st.secrets[key]
@@ -30,10 +31,9 @@ if location == 'UCSF':
     konica = st_load_project('token')
     # 1) check if the entered session number already exists in REDCap KONICA database
     if session in konica['session'].unique(): # check to prevent duplicate uploads
-        st.markdown('🚨 The KM data for this session has already been uploaded. See below to compare if it is the same set of data stored in redcap database.')
-        session_data = konica[konica['session'] == session]
-        st.write(session_data)
-        print(konica.columns)
+        st.markdown('🚨 The KM data for this session has already been uploaded.')
+        # session_data = konica[konica['session'] == session]
+        # st.write(session_data)
         st.stop() # stop execution here so nothing below runs
         
     # 2) check if the session number and patient ID pair entered matches with what is in REDCap SESSION, if the session number exists in REDCap SESSION database. 
@@ -88,6 +88,39 @@ if upi >= 1:
         'km530', 'km540', 'km550', 'km560', 'km570', 'km580', 'km590', 'km600',
         'km610', 'km620', 'km630', 'km640', 'km650', 'km660', 'km670', 'km680',
         'km690', 'km700','operator']
+            
+            # Columns to check for duplicates
+            cols_to_check = ['group', 'date', 'lab_l', 'lab_a', 'lab_b']
+
+            # Ensure both dfs have these columns
+            cols_to_check = [c for c in cols_to_check if c in df.columns and c in konica.columns]
+
+            # Normalize: coerce numerics, parse date
+            df_check = df[cols_to_check].copy()
+            konica_check = konica[cols_to_check].copy()
+
+            # Dates to YYYY-MM-DD
+            if 'date' in cols_to_check:
+                df_check['date'] = pd.to_datetime(df_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                konica_check['date'] = pd.to_datetime(konica_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+
+            # Numerics: lab_l, lab_a, lab_b
+            for col in ['lab_l','lab_a','lab_b']:
+                if col in cols_to_check:
+                    df_check[col] = pd.to_numeric(df_check[col], errors='coerce').round(6)
+                    konica_check[col] = pd.to_numeric(konica_check[col], errors='coerce').round(6)
+
+            # Deduplicate to avoid cartesian blowups
+            df_check = df_check.drop_duplicates()
+            konica_check = konica_check.drop_duplicates()
+
+            # Compare
+            dup_hits = df_check.merge(konica_check, on=cols_to_check, how='inner')
+
+            if not dup_hits.empty:
+                st.error("🚨 Please double check. The file dropped already exists in REDCap database.")
+                st.stop()
+
             st.write('file accepted')
             st.write(df.head())
             
@@ -97,8 +130,6 @@ if upi >= 1:
             
             df_ita = df.copy()
             df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
-            
-            
             
             one, two = st.columns(2)
             with one:
