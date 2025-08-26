@@ -20,18 +20,38 @@ st.write('Instructions: Drop the raw KM export file into the box below. Fill in 
 
 location = st.selectbox('Select Location', ['UCSF','Uganda'], placeholder='Select Location', index=0)
 
-upi = st.number_input('Unique Patient ID')
+upi = st.number_input('Unique Patient ID', min_value=1, step=1)
 
 if upi > 0 and upi < 500 and location == 'UCSF': # little reminder to ensure that the session number and patient id is not flipped
     st.markdown('🚨 Be careful! The entered patient id is <500. Remember to double check :)')
 
 if location == 'UCSF':
-    session = st.number_input('Session #')
+    session = st.number_input('Session #', min_value=1, step=1) # make sure session can only be an integer
     konica = st_load_project('token')
+    # 1) check if the entered session number already exists in REDCap KONICA database
     if session in konica['session'].unique(): # check to prevent duplicate uploads
         st.markdown('🚨 The KM data for this session has already been uploaded. See below to compare if it is the same set of data stored in redcap database.')
         session_data = konica[konica['session'] == session]
         st.write(session_data)
+        print(konica.columns)
+        st.stop() # stop execution here so nothing below runs
+        
+    # 2) check if the session number and patient ID pair entered matches with what is in REDCap SESSION, if the session number exists in REDCap SESSION database. 
+    session_proj = st_load_project('REDCAP_SESSION').reset_index()
+    session_proj['_record_str']  = session_proj['record_id'].astype('string').str.strip()
+    session_proj['_patient_str'] = session_proj['patient_id'].astype('string').str.strip()
+    session_str = str(session).strip()
+    upi_str     = str(upi).strip()
+    
+    sess_rows = session_proj.loc[session_proj["_record_str"] == session_str]
+    if not sess_rows.empty: # session exists in REDCap
+        upi_session_pair_found = (sess_rows["_patient_str"] == upi_str).any()
+        if not upi_session_pair_found:
+            st.error("🚨 The (Patient ID, Session #) pair you entered does not match with what is in REDCap SESSION. Please double check.")
+            st.session_state["errors"] = True
+            st.session_state.pop("finaldf", None)
+            st.stop()
+    
     operator = st.selectbox(':scientist: Select KM operator', ['Caroline','Ella','Lily','Rene'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
     api_url = 'https://redcap.ucsf.edu/api/'
