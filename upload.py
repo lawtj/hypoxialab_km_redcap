@@ -45,8 +45,12 @@ if location == 'UCSF':
     
     sess_rows = session_proj.loc[session_proj["_record_str"] == session_str]
     if not sess_rows.empty: # session exists in REDCap
-        upi_session_pair_found = (sess_rows["_patient_str"] == upi_str).any()
+        upi_session_pair_found = (
+        sess_rows["_patient_str"].astype(float).astype(int).astype(str) 
+        == str(int(float(upi_str)))
+        ).any()
         if not upi_session_pair_found:
+            print(sess_rows["_patient_str"].unique())
             st.error("🚨 The (Patient ID, Session #) pair you entered does not match with what is in REDCap SESSION. Please double check.")
             st.session_state["errors"] = True
             st.session_state.pop("finaldf", None)
