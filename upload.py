@@ -93,6 +93,27 @@ if upi >= 1:
         'km610', 'km620', 'km630', 'km640', 'km650', 'km660', 'km670', 'km680',
         'km690', 'km700','operator']
             
+            st.write(df.head())
+            
+            # the following code is added for ita check - the ita is not going to be included in the redcap upload
+            def ita(row, lab_l, lab_b):
+                return (np.arctan((row[lab_l]-50)/row[lab_b])) * (180/math.pi)
+            
+            df_ita = df.copy()
+            df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
+            
+            one, two = st.columns(2)
+            with one:
+                st.write("Checking ITA by Group...")
+                st.write(df_ita[['group','ita']]) 
+                
+            with two:
+                st.write('ITA range by Group')
+                st.write(df_ita.groupby('group').apply(lambda x: x['ita'].max() - x['ita'].min()).reset_index(name='ita_range'))
+                
+            ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
+            st.plotly_chart(ita_by_group_scatter_plot)
+            
             # Columns to check for duplicates
             cols_to_check = ['group', 'date', 'lab_l', 'lab_a', 'lab_b']
 
@@ -126,27 +147,8 @@ if upi >= 1:
                 st.stop()
 
             st.write('file accepted')
-            st.write(df.head())
             
-            # the following code is added for ita check - the ita is not going to be included in the redcap upload
-            def ita(row, lab_l, lab_b):
-                return (np.arctan((row[lab_l]-50)/row[lab_b])) * (180/math.pi)
-            
-            df_ita = df.copy()
-            df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
-            
-            one, two = st.columns(2)
-            with one:
-                st.write("Checking ITA by Group...")
-                st.write(df_ita[['group','ita']]) 
-                
-            with two:
-                st.write('ITA range by Group')
-                st.write(df_ita.groupby('group').apply(lambda x: x['ita'].max() - x['ita'].min()).reset_index(name='ita_range'))
-                
             # ---------------------------------------------
-            ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
-            st.plotly_chart(ita_by_group_scatter_plot)
             csv = df.to_csv(index=False).encode('utf-8')
             if st.button('Upload to RedCap'):
                 data = {
