@@ -56,7 +56,7 @@ if location == 'UCSF':
             st.session_state.pop("finaldf", None)
             st.stop()
     
-    operator = st.selectbox(':scientist: Select KM operator', ['Lea','Rene'], placeholder='Select Operator', index=None)
+    operator = st.selectbox(':scientist: Select KM operator', ['Lea','Rene', 'Philip', 'Emma'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
     api_url = 'https://redcap.ucsf.edu/api/'
 else:
