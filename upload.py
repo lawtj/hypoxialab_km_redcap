@@ -56,12 +56,12 @@ if location == 'UCSF':
             st.session_state.pop("finaldf", None)
             st.stop()
     
-    operator = st.selectbox(':scientist: Select KM operator', ['Lea','Rene', 'Philip', 'Emma'], placeholder='Select Operator', index=None)
+    operator = st.selectbox(':scientist: Select KM operator', ['Lea','Rene'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token']
     api_url = 'https://redcap.ucsf.edu/api/'
 else:
     session = None  # Or any default value or handling for Uganda
-    operator = st.selectbox(':scientist: Select KM operator', ['Ronald'], placeholder='Select Operator', index=None)
+    operator = st.selectbox(':scientist: Select KM operator', ['Ronald', 'Philip', 'Emma'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token_uganda']
     api_url = 'https://redcap.ace.ac.ug/api/'
 
