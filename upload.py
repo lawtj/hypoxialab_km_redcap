@@ -28,6 +28,7 @@ if upi > 0 and upi < 500 and location == 'UCSF': # little reminder to ensure tha
 
 if location == 'UCSF':
     session = st.number_input('Session #', min_value=1, step=1) # make sure session can only be an integer
+    uganda_data_type = None
     konica = st_load_project('token')
     # 1) check if the entered session number already exists in REDCap KONICA database
     if session in konica['session'].unique(): # check to prevent duplicate uploads
@@ -61,6 +62,8 @@ if location == 'UCSF':
     api_url = 'https://redcap.ucsf.edu/api/'
 else:
     session = None  # Or any default value or handling for Uganda
+    konica = st_load_project('token_uganda')
+    uganda_data_type = st.selectbox('Upload Data Type', ['screening data', 'study session'], index=0)
     operator = st.selectbox(':scientist: Select KM operator', ['Ronald', 'Philip', 'Emma'], placeholder='Select Operator', index=None)
     api_key = st.secrets['token_uganda']
     api_url = 'https://redcap.ace.ac.ug/api/'
@@ -120,51 +123,59 @@ if upi >= 1:
             # Ensure both dfs have these columns
             cols_to_check = [c for c in cols_to_check if c in df.columns and c in konica.columns]
 
-            # Normalize: coerce numerics, parse date
-            df_check = df[cols_to_check].copy()
-            konica_check = konica[cols_to_check].copy()
+            # Empty (test) projects can have no comparable columns yet.
+            if not cols_to_check:
+                st.info("No existing comparable records yet. Skipping duplicate-file check.")
+            else:
+                # Normalize: coerce numerics, parse date
+                df_check = df[cols_to_check].copy()
+                konica_check = konica[cols_to_check].copy()
 
-            # Dates to YYYY-MM-DD
-            if 'date' in cols_to_check:
-                df_check['date'] = pd.to_datetime(df_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
-                konica_check['date'] = pd.to_datetime(konica_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                # Dates to YYYY-MM-DD
+                if 'date' in cols_to_check:
+                    df_check['date'] = pd.to_datetime(df_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                    konica_check['date'] = pd.to_datetime(konica_check['date'], errors='coerce').dt.strftime('%Y-%m-%d')
 
-            # Numerics: lab_l, lab_a, lab_b
-            for col in ['lab_l','lab_a','lab_b']:
-                if col in cols_to_check:
-                    df_check[col] = pd.to_numeric(df_check[col], errors='coerce').round(6)
-                    konica_check[col] = pd.to_numeric(konica_check[col], errors='coerce').round(6)
+                # Numerics: lab_l, lab_a, lab_b
+                for col in ['lab_l','lab_a','lab_b']:
+                    if col in cols_to_check:
+                        df_check[col] = pd.to_numeric(df_check[col], errors='coerce').round(6)
+                        konica_check[col] = pd.to_numeric(konica_check[col], errors='coerce').round(6)
 
-            # Deduplicate to avoid cartesian blowups
-            df_check = df_check.drop_duplicates()
-            konica_check = konica_check.drop_duplicates()
+                # Deduplicate to avoid cartesian blowups
+                df_check = df_check.drop_duplicates()
+                konica_check = konica_check.drop_duplicates()
 
-            # Compare
-            dup_hits = df_check.merge(konica_check, on=cols_to_check, how='inner')
+                # Compare
+                dup_hits = df_check.merge(konica_check, on=cols_to_check, how='inner')
 
-            if not dup_hits.empty:
-                st.error("🚨 Please double check. The file dropped already exists in REDCap database.")
-                st.stop()
+                if not dup_hits.empty:
+                    st.error("🚨 Please double check. The file dropped already exists in REDCap database.")
+                    st.stop()
 
             st.write('file accepted')
             
             # ---------------------------------------------
             csv = df.to_csv(index=False).encode('utf-8')
-            if st.button('Upload to RedCap'):
-                data = {
-                'token': api_key,
-                'content': 'record',
-                'action': 'import',
-                'format': 'csv',
-                'type': 'flat',
-                'overwriteBehavior': 'normal',
-                'forceAutoNumber': 'true',
-                'data': csv,
-                'dateFormat': 'MDY',
-                'returnContent': 'count',
-                'returnFormat': 'json'
-                }
-                with st.spinner('Uploading to RedCap...'):
-                    r = requests.post(api_url,data=data)
-                st.write('HTTP Status: ' + str(r.status_code))
-                st.write(r.text)
+            upload_allowed = not (location == 'Uganda' and uganda_data_type == 'screening data')
+            if upload_allowed:
+                if st.button('Upload to RedCap'):
+                    data = {
+                    'token': api_key,
+                    'content': 'record',
+                    'action': 'import',
+                    'format': 'csv',
+                    'type': 'flat',
+                    'overwriteBehavior': 'normal',
+                    'forceAutoNumber': 'true',
+                    'data': csv,
+                    'dateFormat': 'MDY',
+                    'returnContent': 'count',
+                    'returnFormat': 'json'
+                    }
+                    with st.spinner('Uploading to RedCap...'):
+                        r = requests.post(api_url,data=data)
+                    st.write('HTTP Status: ' + str(r.status_code))
+                    st.write(r.text)
+            else:
+                st.info("Screening data selected: visualization only. Upload to RedCap is disabled.")
