@@ -3,16 +3,46 @@ import pandas as pd
 import requests
 import plotly.express as px
 import numpy as np
-import math
 from redcap import Project
-from pandas.api.types import is_numeric_dtype
 
-def st_load_project(key):
+KONICA_CHECK_FIELDS = ('session', 'group', 'date', 'lab_l', 'lab_a', 'lab_b')
+SESSION_CHECK_FIELDS = ('record_id', 'patient_id')
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _st_load_project_cached(key, fields=None):
     api_key = st.secrets[key]
-    api_url = 'https://redcap.ucsf.edu/api/'
-    project = Project(api_url, api_key)
-    df = project.export_records(format_type='df')
-    return df
+    api_urls = [
+        'https://redcap.ucsf.edu/api/',
+        'https://redcap.ace.ac.ug/api/',
+    ]
+    last_error = None
+    export_kwargs = {'format_type': 'df'}
+    if fields:
+        export_kwargs['fields'] = list(fields)
+
+    for api_url in api_urls:
+        try:
+            project = Project(api_url, api_key)
+            return project.export_records(**export_kwargs)
+        except Exception as err:
+            last_error = err
+
+    st.error(
+        "Unable to connect to REDCap using either UCSF or ACE Uganda API URLs. "
+        f"Last error: {last_error}"
+    )
+    st.stop()
+
+def st_load_project(key, fields=None):
+    fields_tuple = tuple(fields) if fields else None
+    return _st_load_project_cached(key, fields_tuple)
+
+def normalize_id(value):
+    value_str = str(value).strip()
+    try:
+        return str(int(float(value_str)))
+    except (TypeError, ValueError):
+        return value_str
 
 # start layout
 
@@ -21,64 +51,77 @@ st.write('Instructions: Drop the raw KM export file into the box below. Fill in 
 
 location = st.selectbox('Select Location', ['UCSF','Uganda'], placeholder='Select Location', index=0)
 
-upi = st.number_input('Unique Patient ID', min_value=1, step=1)
-
-if upi > 0 and upi < 500 and location == 'UCSF': # little reminder to ensure that the session number and patient id is not flipped
-    st.markdown('🚨 Be careful! The entered patient id is <500. Remember to double check :)')
-
 if location == 'UCSF':
+    data_type = 'study session'
+    session_key = 'REDCAP_SESSION'
+    konica_key = 'token'
+    operator_options = ['Lea','Rene']
+    api_key = st.secrets['token']
+    api_url = 'https://redcap.ucsf.edu/api/'
+else:
+    data_type = st.selectbox('Upload Data Type', ['screening data', 'study session'], index=0)
+    session_key = 'Uganda_REDCAP_SESSION'
+    konica_key = 'Uganda_REDCAP_KONICA'
+    operator_options = ['Ronald', 'Philip', 'Emma']
+    api_key = st.secrets['Uganda_REDCAP_KONICA']
+    api_url = 'https://redcap.ace.ac.ug/api/'
+
+is_study_session = (data_type == 'study session')
+
+if is_study_session:
+    upi = st.number_input('Unique Patient ID', min_value=1, step=1)
+    if upi > 0 and upi < 500 and location == 'UCSF': # little reminder to ensure that the session number and patient id is not flipped
+        st.markdown('🚨 Be careful! The entered patient id is <500. Remember to double check :)')
     session = st.number_input('Session #', min_value=1, step=1) # make sure session can only be an integer
-    uganda_data_type = None
-    konica = st_load_project('token')
+    operator = st.selectbox(':scientist: Select KM operator', operator_options, placeholder='Select Operator', index=None)
+else:
+    upi = None
+    session = None
+    operator = None
+
+konica = None
+requires_session_check = is_study_session
+
+if requires_session_check:
+    konica = st_load_project(konica_key, KONICA_CHECK_FIELDS)
+    session_str = normalize_id(session)
+
     # 1) check if the entered session number already exists in REDCap KONICA database
-    if session in konica['session'].unique(): # check to prevent duplicate uploads
-        st.markdown('🚨 The KM data for this session has already been uploaded.')
-        # session_data = konica[konica['session'] == session]
-        # st.write(session_data)
-        st.stop() # stop execution here so nothing below runs
-        
-    # 2) check if the session number and patient ID pair entered matches with what is in REDCap SESSION, if the session number exists in REDCap SESSION database. 
-    session_proj = st_load_project('REDCAP_SESSION').reset_index()
-    session_proj['_record_str']  = session_proj['record_id'].astype('string').str.strip()
-    session_proj['_patient_str'] = session_proj['patient_id'].astype('string').str.strip()
-    session_str = str(session).strip()
-    upi_str     = str(upi).strip()
-    
+    if 'session' in konica.columns:
+        konica_session_str = konica['session'].astype('string').str.strip().map(normalize_id)
+        if (konica_session_str == session_str).any(): # check to prevent duplicate uploads
+            st.markdown('🚨 The KM data for this session has already been uploaded.')
+            st.stop() # stop execution here so nothing below runs
+    else:
+        st.warning("Session column not found in KONICA project. Skipping existing-session check.")
+
+    # 2) check if the session number and patient ID pair entered matches with what is in REDCap SESSION, if the session number exists in REDCap SESSION database.
+    session_proj = st_load_project(session_key, SESSION_CHECK_FIELDS).reset_index()
+    required_cols = {'record_id', 'patient_id'}
+    if not required_cols.issubset(session_proj.columns):
+        st.error("🚨 REDCap SESSION project is missing required fields: record_id and/or patient_id.")
+        st.stop()
+
+    session_proj['_record_str'] = session_proj['record_id'].astype('string').str.strip().map(normalize_id)
+    session_proj['_patient_str'] = session_proj['patient_id'].astype('string').str.strip().map(normalize_id)
+    upi_str = normalize_id(upi)
+
     sess_rows = session_proj.loc[session_proj["_record_str"] == session_str]
     if not sess_rows.empty: # session exists in REDCap
-        upi_session_pair_found = (
-        sess_rows["_patient_str"].astype(float).astype(int).astype(str) 
-        == str(int(float(upi_str)))
-        ).any()
+        upi_session_pair_found = (sess_rows["_patient_str"] == upi_str).any()
         if not upi_session_pair_found:
-            print(sess_rows["_patient_str"].unique())
             st.error("🚨 The (Patient ID, Session #) pair you entered does not match with what is in REDCap SESSION. Please double check.")
             st.session_state["errors"] = True
             st.session_state.pop("finaldf", None)
             st.stop()
-    
-    operator = st.selectbox(':scientist: Select KM operator', ['Lea','Rene'], placeholder='Select Operator', index=None)
-    api_key = st.secrets['token']
-    api_url = 'https://redcap.ucsf.edu/api/'
-else:
-    session = None  # Or any default value or handling for Uganda
-    konica = st_load_project('token_uganda')
-    uganda_data_type = st.selectbox('Upload Data Type', ['screening data', 'study session'], index=0)
-    operator = st.selectbox(':scientist: Select KM operator', ['Ronald', 'Philip', 'Emma'], placeholder='Select Operator', index=None)
-    api_key = st.secrets['token_uganda']
-    api_url = 'https://redcap.ace.ac.ug/api/'
 
-if upi >= 1:
-    if location == 'UCSF' and session is not None and session >= 1 or location == 'Uganda':
+if (not requires_session_check) or (upi >= 1 and session >= 1):
         uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
             #df = df.drop(['Unnamed: 45'], axis=1)
-            df['upi'] = int(upi)
-            if location == 'UCSF':
-                df['session'] = int(session)
-            else:
-                df['session'] = None  # Or handle as needed for Uganda
+            df['upi'] = int(upi) if upi is not None else None
+            df['session'] = int(session) if session is not None else None
             df['operator'] = operator
             df.rename_axis('record_id', inplace=True)
             df = df.reset_index()
@@ -98,12 +141,11 @@ if upi >= 1:
             
             st.write(df.head())
             
-            # the following code is added for ita check - the ita is not going to be included in the redcap upload
-            def ita(row, lab_l, lab_b):
-                return (np.arctan((row[lab_l]-50)/row[lab_b])) * (180/math.pi)
-            
             df_ita = df.copy()
-            df_ita['ita'] = df_ita.apply(ita, args=('lab_l', 'lab_b'), axis=1) # added for ita check
+            df_ita['lab_l'] = pd.to_numeric(df_ita['lab_l'], errors='coerce')
+            df_ita['lab_b'] = pd.to_numeric(df_ita['lab_b'], errors='coerce')
+            # Vectorized ITA computation to avoid slow row-wise apply.
+            df_ita['ita'] = np.degrees(np.arctan((df_ita['lab_l'] - 50) / df_ita['lab_b']))
             
             one, two = st.columns(2)
             with one:
@@ -112,12 +154,19 @@ if upi >= 1:
                 
             with two:
                 st.write('ITA range by Group')
-                st.write(df_ita.groupby('group').apply(lambda x: x['ita'].max() - x['ita'].min()).reset_index(name='ita_range'))
+                ita_range = (
+                    df_ita.groupby('group', dropna=False)['ita']
+                    .agg(lambda values: values.max() - values.min())
+                    .reset_index(name='ita_range')
+                )
+                st.write(ita_range)
                 
             ita_by_group_scatter_plot = px.scatter(df_ita, x='group', y='ita', title='ITA by Group')
             st.plotly_chart(ita_by_group_scatter_plot)
             
             # Columns to check for duplicates
+            if konica is None:
+                konica = st_load_project(konica_key, KONICA_CHECK_FIELDS)
             cols_to_check = ['group', 'date', 'lab_l', 'lab_a', 'lab_b']
 
             # Ensure both dfs have these columns
@@ -146,18 +195,18 @@ if upi >= 1:
                 df_check = df_check.drop_duplicates()
                 konica_check = konica_check.drop_duplicates()
 
-                # Compare
-                dup_hits = df_check.merge(konica_check, on=cols_to_check, how='inner')
-
-                if not dup_hits.empty:
+                # Compare using set-style key matching to avoid expensive frame merge.
+                df_keys = pd.MultiIndex.from_frame(df_check[cols_to_check])
+                konica_keys = pd.MultiIndex.from_frame(konica_check[cols_to_check])
+                if df_keys.isin(konica_keys).any():
                     st.error("🚨 Please double check. The file dropped already exists in REDCap database.")
                     st.stop()
 
             st.write('file accepted')
             
             # ---------------------------------------------
-            csv = df.to_csv(index=False).encode('utf-8')
-            upload_allowed = not (location == 'Uganda' and uganda_data_type == 'screening data')
+            csv = df.to_csv(index=False)
+            upload_allowed = is_study_session
             if upload_allowed:
                 if st.button('Upload to RedCap'):
                     data = {
@@ -174,8 +223,14 @@ if upi >= 1:
                     'returnFormat': 'json'
                     }
                     with st.spinner('Uploading to RedCap...'):
-                        r = requests.post(api_url,data=data)
+                        try:
+                            r = requests.post(api_url, data=data, timeout=(10, 120))
+                        except requests.RequestException as err:
+                            st.error(f"Upload failed: {err}")
+                            st.stop()
                     st.write('HTTP Status: ' + str(r.status_code))
                     st.write(r.text)
+                    if r.ok:
+                        _st_load_project_cached.clear()
             else:
                 st.info("Screening data selected: visualization only. Upload to RedCap is disabled.")
