@@ -60,11 +60,15 @@ if location == 'UCSF':
     api_url = 'https://redcap.ucsf.edu/api/'
 else:
     data_type = st.selectbox('Upload Data Type', ['screening data', 'study session'], index=0)
-    session_key = 'Uganda_REDCAP_SESSION'
-    konica_key = 'Uganda_REDCAP_KONICA'
+    # session_key = 'Uganda_REDCAP_SESSION'
+    # konica_key = 'Uganda_REDCAP_KONICA'
+    session_key = 'Uganda_REDCAP_SESSION_UCSF'
+    konica_key = 'Uganda_REDCAP_KONICA_UCSF'
     operator_options = ['Ronald', 'Philip', 'Emma']
-    api_key = st.secrets['Uganda_REDCAP_KONICA']
-    api_url = 'https://redcap.ace.ac.ug/api/'
+    # api_key = st.secrets['Uganda_REDCAP_KONICA']
+    api_key = st.secrets['Uganda_REDCAP_KONICA_UCSF']
+    # api_url = 'https://redcap.ace.ac.ug/api/'
+    api_url = 'https://redcap.ucsf.edu/api/'
 
 is_study_session = (data_type == 'study session')
 
@@ -107,15 +111,34 @@ if requires_session_check:
     upi_str = normalize_id(upi)
 
     sess_rows = session_proj.loc[session_proj["_record_str"] == session_str]
-    if not sess_rows.empty: # session exists in REDCap
-        upi_session_pair_found = (sess_rows["_patient_str"] == upi_str).any()
-        if not upi_session_pair_found:
-            st.error("🚨 The (Patient ID, Session #) pair you entered does not match with what is in REDCap SESSION. Please double check.")
-            st.session_state["errors"] = True
-            st.session_state.pop("finaldf", None)
-            st.stop()
+    found_patient_ids = sorted(
+        set(sess_rows["_patient_str"].dropna().astype("string").str.strip().tolist())
+    )
+    upi_session_pair_found = (sess_rows["_patient_str"] == upi_str).any() if not sess_rows.empty else False
+    if not upi_session_pair_found:
+        if found_patient_ids:
+            detail_line = (
+                f"- Session #{session_str}, Patient ID entered is {upi_str}, "
+                f"Patient ID found in REDCap SESSION is {', '.join(found_patient_ids)}."
+            )
+        else:
+            detail_line = (
+                f"- Session #{session_str}, Patient ID entered is {upi_str}, "
+                "no Patient ID found in REDCap SESSION."
+            )
+        st.error(
+            "🚨 The (Patient ID, Session #) pair you entered does not match with what is in REDCap SESSION.\n\n"
+            f"{detail_line}\n\n"
+            "Please double check."
+        )
+        st.session_state["errors"] = True
+        st.session_state.pop("finaldf", None)
+        st.stop()
 
-if (not requires_session_check) or (upi >= 1 and session >= 1):
+study_session_inputs_ready = bool(
+    is_study_session and upi is not None and upi >= 1 and session is not None and session >= 1 and operator is not None
+)
+if (not requires_session_check) or study_session_inputs_ready:
         uploaded_file = st.file_uploader('Konica Minolta CSV file', type='csv')
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
@@ -198,8 +221,69 @@ if (not requires_session_check) or (upi >= 1 and session >= 1):
                 # Compare using set-style key matching to avoid expensive frame merge.
                 df_keys = pd.MultiIndex.from_frame(df_check[cols_to_check])
                 konica_keys = pd.MultiIndex.from_frame(konica_check[cols_to_check])
-                if df_keys.isin(konica_keys).any():
-                    st.error("🚨 Please double check. The file dropped already exists in REDCap database.")
+                matching_keys = df_keys[df_keys.isin(konica_keys)]
+                if len(matching_keys) > 0:
+                    detail_lines = []
+                    konica_detail = st_load_project(konica_key)
+                    detail_cols = [c for c in cols_to_check if c in konica_detail.columns]
+                    if detail_cols:
+                        konica_detail_check = konica_detail[detail_cols].copy()
+                        if 'date' in detail_cols:
+                            konica_detail_check['date'] = pd.to_datetime(
+                                konica_detail_check['date'], errors='coerce'
+                            ).dt.strftime('%Y-%m-%d')
+                        for col in ['lab_l', 'lab_a', 'lab_b']:
+                            if col in detail_cols:
+                                konica_detail_check[col] = pd.to_numeric(
+                                    konica_detail_check[col], errors='coerce'
+                                ).round(6)
+
+                        konica_detail_keys = pd.MultiIndex.from_frame(konica_detail_check[detail_cols])
+                        matched_konica_rows = konica_detail.loc[konica_detail_keys.isin(matching_keys)].copy()
+
+                        if not matched_konica_rows.empty and 'session' in matched_konica_rows.columns:
+                            matched_konica_rows['_session_str'] = (
+                                matched_konica_rows['session'].astype('string').str.strip().map(normalize_id)
+                            )
+                            pid_col = None
+                            for candidate in ['patient_id', 'upi']:
+                                if candidate in matched_konica_rows.columns:
+                                    pid_col = candidate
+                                    break
+
+                            if pid_col is not None:
+                                matched_konica_rows['_pid_str'] = (
+                                    matched_konica_rows[pid_col].astype('string').str.strip().map(normalize_id)
+                                )
+                                for sess_id, grp in matched_konica_rows.groupby('_session_str', dropna=True):
+                                    pid_vals = sorted(
+                                        set(grp['_pid_str'].dropna().astype('string').str.strip().tolist())
+                                    )
+                                    if pid_vals:
+                                        detail_lines.append(
+                                            f"- This file corresponds to Session #{sess_id}, Patient ID {', '.join(pid_vals)} in REDCap database."
+                                        )
+                                    else:
+                                        detail_lines.append(
+                                            f"- This file corresponds to Session #{sess_id}, no Patient ID found in REDCap database."
+                                        )
+                            else:
+                                for sess_id in sorted(
+                                    set(matched_konica_rows['_session_str'].dropna().astype('string').str.strip().tolist())
+                                ):
+                                    detail_lines.append(
+                                        f"- This file corresponds to Session #{sess_id}, no Patient ID found in REDCap database."
+                                    )
+
+                    if not detail_lines:
+                        detail_lines.append(
+                            f"- This file corresponds to Session #{session_str}, no Patient ID found in REDCap database."
+                        )
+                    detail_text = "\n".join(detail_lines)
+                    st.error(
+                        "🚨 Please double check. The file dropped already exists in REDCap database.\n\n"
+                        f"{detail_text}"
+                    )
                     st.stop()
 
             st.write('file accepted')
@@ -234,3 +318,5 @@ if (not requires_session_check) or (upi >= 1 and session >= 1):
                         _st_load_project_cached.clear()
             else:
                 st.info("Screening data selected: visualization only. Upload to RedCap is disabled.")
+elif is_study_session:
+    st.info("Please enter Unique Patient ID, Session #, and select KM operator to continue.")
