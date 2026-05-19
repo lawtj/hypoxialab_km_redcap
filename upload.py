@@ -55,7 +55,7 @@ if location == 'UCSF':
     data_type = 'study session'
     session_key = 'REDCAP_SESSION'
     konica_key = 'token'
-    operator_options = ['Lea','Rene']
+    operator_options = ['Katie', 'Ella', 'Rene']
     api_key = st.secrets['token']
     api_url = 'https://redcap.ucsf.edu/api/'
 else:
